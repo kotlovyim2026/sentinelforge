@@ -1,0 +1,53 @@
+services:
+    postgres:
+        image: postgres:16
+        environment:
+            POSTGRES_PASSWORD: postgres
+            POSTGRES_USER: postgres
+            POSTGRES_DB: secops
+        ports: ["5432:5432"]
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+
+    redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+            - "5672:5672"
+            - "15672:15672"
+
+    gateway:
+        build: ./apps/sf-gateway
+        ports: ["3001:3001"]
+        depends_on: [postgres, redis, rabbitmq]
+        env_file: .env
+
+    integrations:
+        build: ./apps/sf-integrations
+        ports: ["3002:3002"]
+        depends_on: [rabbitmq]
+        env_file: .env
+
+    orchestrator:
+        build: ./apps/sf-orchestrator
+        ports: ["8001:8001"]
+        depends_on: [postgres, redis, rabbitmq]
+        env_file: .env
+
+    ai-service:
+        build: ./apps/sf-ai
+        ports: ["8002:8002"]
+        depends_on: [postgres, redis, rabbitmq]
+        env_file: .env
+
+    web:
+        build: ./apps/sf-web
+        ports: ["3000:3000"]
+        depends_on: [gateway]
+        env_file: .env
+
+volumes:
+    pgdata:

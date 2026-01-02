@@ -1,0 +1,7 @@
+{
+    "name": "sentinelforge",
+    "private": true,
+    "scripts": {
+        "dev:web": "pnpm --filter sf-web dev"
+    }
+}

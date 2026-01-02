@@ -1,0 +1,12 @@
+{
+    "name": "sf-integrations",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/main.ts",
+        "build": "tsc -p tsconfig.json",
+        "start": "node dist/main.js",
+        "lint": "echo \"add eslint later\"",
+        "test": "echo \"add tests later\""
+    }
+}
