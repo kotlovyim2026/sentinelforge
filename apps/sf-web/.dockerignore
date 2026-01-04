@@ -1,0 +1,10 @@
+node_modules
+.next
+.env
+.env.local
+*.log
+.pnpm-store
+.turbo
+coverage
+.eslintcache
+out

@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+.pnpm-store
+.turbo
+coverage
+.eslintcache
