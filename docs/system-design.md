@@ -23,7 +23,7 @@ flowchart LR
 
   WEB -->|HTTP API| GW[sf-gateway\nNestJS\nAuth + RBAC/ABAC + Audit]
 
-  EXT[External Systems\n(SIEM Mock / Webhooks)] -->|HTTP Webhooks| INT[sf-integrations\nExpress\nValidate + Normalize]
+  EXT[External Systems\nSIEM Mock / Webhooks] -->|HTTP Webhooks| INT[sf-integrations\nExpress\nValidate + Normalize]
 
   INT -->|Publish events| MQ[(RabbitMQ\nsf.events topic exchange)]
 
