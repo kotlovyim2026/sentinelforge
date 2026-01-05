@@ -39,7 +39,7 @@ flowchart LR
   ORCH -->|Run state + outputs| PG
   ORCH -->|playbook.step.completed.v1| MQ
 
-  GW -->|Explain request (HTTP)| AI[sf-ai\nFastAPI\nRAG + Mock LLM]
+  GW -->|Explain request via HTTP| AI[sf-ai\nFastAPI\nRAG + Mock LLM]
   AI -->|Read evidence / store drafts| PG
   AI -->|Optional consume events| MQ
 
@@ -55,7 +55,7 @@ sequenceDiagram
   autonumber
   participant EXT as External Provider
   participant INT as sf-integrations
-  participant MQ as RabbitMQ (sf.events)
+  participant MQ as RabbitMQ sf.events
   participant TRI as Triage Worker
   participant PG as Postgres
   participant GW as sf-gateway
@@ -63,31 +63,31 @@ sequenceDiagram
   participant AI as sf-ai
   participant ORCH as sf-orchestrator
 
-  EXT->>INT: POST /webhooks/:provider (raw alert)
+  EXT->>INT: POST /webhooks/:provider - raw alert
   INT->>INT: Validate + normalize
-  INT->>MQ: Publish alert.received.v1 (event_id, org_id, trace_id)
+  INT->>MQ: Publish alert.received.v1 - event_id, org_id, trace_id
   MQ->>TRI: Deliver alert.received.v1
   TRI->>PG: Upsert alert + correlate incident
   TRI->>MQ: Publish incident.created.v1 / incident.updated.v1
 
-  WEB->>GW: GET /incidents (poll)
+  WEB->>GW: GET /incidents - poll
   GW->>PG: Query incidents + latest status
   GW-->>WEB: Incidents list + counts
 
   WEB->>GW: POST /incidents/:id/explain
   GW->>AI: POST /explain {incident_id, evidence refs}
-  AI->>PG: Retrieve evidence (RAG scope)
-  AI-->>GW: summary + citations (draft)
+  AI->>PG: Retrieve evidence - RAG scope
+  AI-->>GW: summary + citations - draft
   GW->>PG: Store AI draft summary + audit entry
   GW-->>WEB: Summary + citation map
 
-  WEB->>GW: POST /playbooks/run (Idempotency-Key)
+  WEB->>GW: POST /playbooks/run - Idempotency-Key
   GW->>GW: RBAC/ABAC evaluate + audit decision
-  GW->>MQ: Publish playbook.run.requested.v1 (run_id)
+  GW->>MQ: Publish playbook.run.requested.v1 - run_id
   MQ->>ORCH: Deliver playbook.run.requested.v1
   ORCH->>PG: Persist run state, execute steps
   ORCH->>MQ: Publish playbook.step.completed.v1
-  WEB->>GW: GET /playbooks/runs/:run_id (poll)
+  WEB->>GW: GET /playbooks/runs/:run_id - poll
   GW->>PG: Read run status
   GW-->>WEB: Current run status + step outputs
 ```
