@@ -27,14 +27,14 @@ flowchart LR
 
   INT -->|Publish events| MQ[(RabbitMQ\nsf.events topic exchange)]
 
-  MQ -->|alert.received.v1| TRIAGE[Incident Triage Worker\n(initially in Gateway or separate)]
+  MQ -->|alert.received.v1| TRIAGE[Incident Triage Worker\ninitially in Gateway or separate]
   TRIAGE -->|DB write| PG[(Postgres)]
   TRIAGE -->|incident.created/updated| MQ
 
   GW -->|Read/Write domain data| PG
-  GW -->|Cache/locks/rate limit (optional)| RD[(Redis)]
+  GW -->|Cache/locks/rate limit - optional| RD[(Redis)]
 
-  GW -->|Request playbook run\n(playbook.run.requested.v1)| MQ
+  GW -->|Request playbook run\nplaybook.run.requested.v1| MQ
   MQ -->|playbook.run.requested.v1| ORCH[sf-orchestrator\nFastAPI\nPlaybook Executor]
   ORCH -->|Run state + outputs| PG
   ORCH -->|playbook.step.completed.v1| MQ
