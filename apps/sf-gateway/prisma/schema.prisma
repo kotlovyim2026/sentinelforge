@@ -1,13 +1,529 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum OrgMemberRole {
+  admin
+  analyst
+  viewer
+}
+
+enum SessionStatus {
+  active
+  revoked
+  rotated
+  compromised
+}
+
+enum AuditAction {
+  auth_register
+  auth_login_success
+  auth_login_failed
+  auth_refresh
+  auth_logout
+
+  incident_create
+  incident_update
+  incident_export
+
+  evidence_add
+  evidence_read
+
+  playbook_run_request
+  playbook_run_update
+
+  integration_create
+  integration_update
+  integration_delete
+
+  policy_update
+  policy_simulate
+
+  policy_decision
+}
+
+enum IncidentStatus {
+  open
+  investigating
+  contained
+  resolved
+  closed
+}
+
+enum EvidenceType {
+  note
+  log
+  url
+  file_ref
+}
+
+enum PlaybookRunStatus {
+  queued
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+enum PlaybookStepStatus {
+  pending
+  running
+  succeeded
+  failed
+  skipped
+}
+
+enum PolicyEffect {
+  allow
+  deny
+}
+
+enum AiSummaryStatus {
+  draft
+  final
+  rejected
+}
+
+model Organization {
+  id        String      @id @default(uuid())
+  name      String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  members   OrgMember[]
+  incidents Incident[]
+  alerts    Alert[]
+  evidence  Evidence[]
+  policies  Policy[]
+  audits    AuditLog[]
+  sessions  Session[]
+  integrations Integration[]
+  playbooks Playbook[]
+  runs      PlaybookRun[]
+  aiSummaries AiSummary[]
+  processedEvents ProcessedEvent[]
+
+  @@index([createdAt])
+  incidentTimelineEvents IncidentTimelineEvent[]
+  playbookStepRuns PlaybookStepRun[]
+  policyVersions PolicyVersion[]
+  policyDecisions PolicyDecision[]
+}
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  displayName  String?
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  memberships  OrgMember[]
+  sessions     Session[]
+  audits       AuditLog[]
+  incidentsAssigned Incident[] @relation("IncidentAssignee")
+  evidenceCreated  Evidence[]  @relation("EvidenceCreator")
+  timelineEvents   IncidentTimelineEvent[] @relation("TimelineActor")
+  policyDecisions  PolicyDecision[]
+  playbookRunsRequested PlaybookRun[] @relation("PlaybookRunRequester")
+  aiRequested AiSummary[] @relation("AiRequester")
+
+  incidents Incident[]
+
+  policyVersions PolicyVersion[]
+}
+
+model OrgMember {
+  id        String        @id @default(uuid())
+  orgId     String
+  userId    String
+  role      OrgMemberRole @default(viewer)
+  createdAt DateTime      @default(now())
+
+  org       Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@index([orgId, role])
+}
+
+model Session {
+  id              String        @id @default(uuid())
+  orgId           String
+  userId          String
+
+  refreshTokenHash String
+  status          SessionStatus @default(active)
+
+  rotatedFromId   String?
+  rotatedToId     String?
+
+  ip              String?
+  userAgent       String?
+
+  createdAt       DateTime      @default(now())
+  lastUsedAt      DateTime?
+  expiresAt       DateTime
+  revokedAt       DateTime?
+
+  org             Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  rotatedFrom     Session?      @relation("SessionRotationFrom", fields: [rotatedFromId], references: [id])
+  rotatedTo       Session?      @relation("SessionRotationTo", fields: [rotatedToId], references: [id])
+
+  @@index([orgId, userId])
+  @@index([status, expiresAt])
+  @@index([refreshTokenHash])
+  rotatedFromSessions Session[] @relation("SessionRotationFrom")
+  rotatedToSessions Session[] @relation("SessionRotationTo")
+}
+
+model Integration {
+  id          String   @id @default(uuid())
+  orgId       String
+  name        String
+  provider    String  
+  enabled     Boolean  @default(true)
+
+  config      Json?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, provider])
+}
+
+model Alert {
+  id          String   @id @default(uuid())
+  orgId       String
+
+  source      String   
+  sourceEventId String? 
+  fingerprint String?   
+
+  type        String   
+  severity    Int      
+  summary     String
+  raw         Json?  
+
+  occurredAt  DateTime
+  receivedAt  DateTime @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  incidentLinks IncidentAlert[]
+
+  @@index([orgId, occurredAt])
+  @@index([orgId, type, severity])
+  @@unique([orgId, source, sourceEventId])
+}
+
+model ProcessedEvent {
+  id         String   @id @default(uuid())
+  orgId      String
+  eventId    String  
+  producer   String
+  routingKey String
+  processedAt DateTime @default(now())
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, eventId])
+  @@index([orgId, processedAt])
+}
+
+model Incident {
+  id          String        @id @default(uuid())
+  orgId       String
+  title       String
+  status      IncidentStatus @default(open)
+  severity    Int           
+
+  assigneeId  String?
+  createdById String?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  org         Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignee    User?         @relation("IncidentAssignee", fields: [assigneeId], references: [id])
+  createdBy   User?         @relation(fields: [createdById], references: [id])
+
+  alerts      IncidentAlert[]
+  evidence    Evidence[]
+  timeline    IncidentTimelineEvent[]
+  playbookRuns PlaybookRun[]
+  aiSummaries  AiSummary[]
+
+  @@index([orgId, status, severity])
+  @@index([orgId, updatedAt])
+  @@index([assigneeId])
+}
+
+model IncidentAlert {
+  id         String   @id @default(uuid())
+  incidentId String
+  alertId    String
+  linkedAt   DateTime @default(now())
+
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  alert      Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentId, alertId])
+  @@index([alertId])
+}
+
+model Evidence {
+  id          String      @id @default(uuid())
+  orgId       String
+  incidentId  String
+  type        EvidenceType
+
+  contentText String?
+  contentUrl  String?
+  contentRef  String?
+
+  createdById String?
+  createdAt   DateTime    @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  incident    Incident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  createdBy   User?        @relation("EvidenceCreator", fields: [createdById], references: [id])
+
+  citations   AiCitation[]
+
+  @@index([orgId, incidentId, createdAt])
+}
+
+model IncidentTimelineEvent {
+  id          String   @id @default(uuid())
+  orgId       String
+  incidentId  String
+
+  kind        String   
+  message     String
+  meta        Json?
+
+  actorUserId String?
+  createdAt   DateTime @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  incident    Incident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  actor       User?        @relation("TimelineActor", fields: [actorUserId], references: [id])
+
+  @@index([orgId, incidentId, createdAt])
+}
+
+model Playbook {
+  id          String   @id @default(uuid())
+  orgId       String
+  name        String
+  description String?
+  enabled     Boolean  @default(true)
+
+  definition  Json
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  runs        PlaybookRun[]
+
+  @@unique([orgId, name])
+  @@index([orgId, enabled])
+}
+
+model PlaybookRun {
+  id            String           @id @default(uuid())
+  orgId         String
+  incidentId    String
+  playbookId    String
+
+  status        PlaybookRunStatus @default(queued)
+
+  requestedById String?
+  idempotencyKey String? 
+  attempts      Int              @default(0)
+
+  startedAt     DateTime?
+  finishedAt    DateTime?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  incident      Incident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  playbook      Playbook     @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+  requestedBy   User?        @relation("PlaybookRunRequester", fields: [requestedById], references: [id])
+
+  steps         PlaybookStepRun[]
+
+  @@index([orgId, incidentId, createdAt])
+  @@index([orgId, status])
+  @@unique([orgId, idempotencyKey])
+}
+
+model PlaybookStepRun {
+  id          String           @id @default(uuid())
+  orgId       String
+  runId       String
+
+  stepIndex   Int
+  stepName    String?
+  status      PlaybookStepStatus @default(pending)
+
+  attempts    Int              @default(0)
+  lastError   String?
+  output      Json?
+
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  run         PlaybookRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, stepIndex])
+  @@index([orgId, status])
+}
+
+model AiSummary {
+  id          String         @id @default(uuid())
+  orgId       String
+  incidentId  String
+
+  status      AiSummaryStatus @default(draft)
+  summary     String
+
+  modelName   String?        
+  promptHash  String?        
+  generatedAt DateTime       @default(now())
+
+  requestedById String?
+  traceId     String?
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  incident    Incident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  requestedBy User?        @relation("AiRequester", fields: [requestedById], references: [id])
+
+  citations   AiCitation[]
+
+  @@index([orgId, incidentId, generatedAt])
+  @@index([status])
+}
+
+model AiCitation {
+  id         String   @id @default(uuid())
+  summaryId  String
+  evidenceId String
+  quoteSpan  Json?    
+
+  summary    AiSummary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  evidence   Evidence  @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([summaryId, evidenceId])
+  @@index([evidenceId])
+}
+
+model Policy {
+  id          String   @id @default(uuid())
+  orgId       String
+  name        String
+  enabled     Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  versions    PolicyVersion[]
+
+  @@unique([orgId, name])
+  @@index([orgId, enabled])
+}
+
+model PolicyVersion {
+  id          String   @id @default(uuid())
+  policyId    String
+  orgId       String
+
+  version     Int
+  document    Json
+
+  createdAt   DateTime @default(now())
+  createdById String?
+  changeSummary String?
+
+  isActive    Boolean  @default(false)
+
+  policy      Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  @@unique([policyId, version])
+  @@index([orgId, isActive])
+  @@index([createdAt])
+}
+
+model PolicyDecision {
+  id          String      @id @default(uuid())
+  orgId       String
+  userId      String?
+
+  action      String
+  resourceType String
+  resourceId  String?
+
+  effect      PolicyEffect
+  reason      String
+  ruleId      String?
+
+  traceId     String?
+  requestId   String?
+
+  createdAt   DateTime    @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user        User?        @relation(fields: [userId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([orgId, action])
+  @@index([traceId])
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  orgId       String
+  userId      String?
+
+  action      AuditAction
+  resourceType String?
+  resourceId  String?
+  message     String?
+  meta        Json?
+
+  ip          String?
+  userAgent   String?
+
+  traceId     String?
+  requestId   String?
+
+  createdAt   DateTime    @default(now())
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user        User?        @relation(fields: [userId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([orgId, action])
+  @@index([traceId])
 }
