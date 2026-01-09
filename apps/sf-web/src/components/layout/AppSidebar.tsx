@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Moon, Sun, PanelLeft, User, LogOut } from "lucide-react";
+import { Activity, Moon, Sun, PanelLeft } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
     Sidebar,
@@ -19,6 +19,7 @@ import {
     useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { AccountPill } from "@/components/auth/AccountPill";
 import { navItems } from "./nav-items";
 
 export function AppSidebar() {
@@ -50,6 +51,7 @@ export function AppSidebar() {
                         <PanelLeft className="h-5 w-5 absolute inset-0 m-auto opacity-0 transition-opacity group-hover:opacity-100" />
                     </Button>
                 </div>
+                <SidebarSeparator className="mx-0! w-full!" />
             </SidebarHeader>
 
             <SidebarContent>
@@ -93,25 +95,8 @@ export function AppSidebar() {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
-                <SidebarSeparator />
-                <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton size="lg">
-                            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                                <User className="size-4" />
-                            </div>
-                            <div className="grid flex-1 text-left text-sm leading-tight">
-                                <span className="truncate font-semibold">
-                                    John Doe
-                                </span>
-                                <span className="truncate text-xs text-muted-foreground">
-                                    john.doe@sentinelforge.com
-                                </span>
-                            </div>
-                            <LogOut className="ml-auto size-4" />
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                </SidebarMenu>
+                <SidebarSeparator className="mx-0! w-full!" />
+                <AccountPill />
             </SidebarFooter>
         </Sidebar>
     );

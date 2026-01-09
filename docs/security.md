@@ -44,37 +44,170 @@ SentinelForge is a demo platform, but it should behave like a production-grade s
 
 ## 2) Authentication (AuthN)
 
-### 2.1 Sessions and tokens
+### 2.1 Auth flows & cookies
 
-SentinelForge uses:
+SentinelForge implements a secure, cookie-based authentication system with refresh token rotation to protect against token theft and replay attacks.
 
--   access token (short TTL) for API calls
--   refresh token (longer TTL) stored as **HttpOnly cookie**
+#### Architecture
 
-**Rules**
+**Components:**
+- **Access Token**: Short-lived JWT (15 minutes) stored in HttpOnly cookie
+- **Refresh Token**: Long-lived random token (7 days) stored in HttpOnly cookie, hashed in database
+- **Session Model**: Database-backed sessions with rotation tracking
 
--   Refresh token must be:
-    -   `HttpOnly`
-    -   `Secure` (in real HTTPS)
-    -   `SameSite=Lax` or `Strict` (choose based on UI hosting plan)
--   Access token should be short-lived (e.g. 5–15 minutes)
--   Refresh rotation:
-    -   refresh token is replaced on every refresh
-    -   previous refresh token is invalidated
+**Token Flow:**
 
-### 2.2 Passwords
+```
+1. Registration/Login
+   ├─> Create User + Organization (for registration)
+   ├─> Generate refresh token (64-byte random)
+   ├─> Hash refresh token (SHA-256) → store in DB
+   ├─> Create Session record (status: active)
+   ├─> Generate Access Token (JWT) with session ID
+   └─> Set both as HttpOnly cookies
 
--   store only password hashes (bcrypt/argon2)
--   enforce basic password policy (length, common password checks optional)
--   lockout or rate limiting on repeated failures
+2. API Request (Protected Endpoint)
+   ├─> Extract access_token from cookie
+   ├─> Validate JWT signature & expiration
+   ├─> Verify user still exists and has org membership
+   └─> Allow request with user context
 
-### 2.3 CSRF
+3. Token Refresh (Rotation)
+   ├─> Extract refresh_token from cookie
+   ├─> Hash token and lookup in DB (status: active)
+   ├─> Validate not expired
+   ├─> Mark old session as "rotated"
+   ├─> Generate NEW refresh token
+   ├─> Create NEW session (linked to old via rotatedFromId)
+   ├─> Update old session with rotatedToId
+   ├─> Generate NEW access token
+   └─> Return new cookies
 
-If using cookie-based auth for API:
+4. Token Reuse Detection (Security)
+   ├─> User attempts refresh with OLD token
+   ├─> Hash token → find session (status: rotated/revoked)
+   ├─> SECURITY BREACH DETECTED
+   ├─> Revoke ALL active sessions for user+org (status: compromised)
+   ├─> Log audit event
+   └─> Return 401 Unauthorized
 
--   protect state-changing routes with:
-    -   `SameSite` + CSRF token (double-submit) OR
-    -   only allow same-origin requests + strict CORS
+5. Logout
+   ├─> Extract access token to get session ID
+   ├─> Mark session as "revoked" (revokedAt: now)
+   ├─> Clear cookies
+   └─> Log audit event
+```
+
+#### Security Properties
+
+**Cookie Configuration:**
+```javascript
+{
+  httpOnly: true,        // No JavaScript access (XSS protection)
+  secure: true,          // HTTPS only in production
+  sameSite: 'lax',       // CSRF protection
+  maxAge: <appropriate>  // 15min (access) / 7days (refresh)
+}
+```
+
+**Why Refresh Rotation?**
+- **Prevents Token Theft**: Stolen refresh token is immediately invalidated on next legitimate use
+- **Detects Replay Attacks**: Reuse of rotated token triggers full session revocation
+- **Limits Blast Radius**: Only 1 active refresh token per session at any time
+- **Audit Trail**: Complete rotation chain tracked via `rotatedFromId` / `rotatedToId`
+
+**Session States:**
+- `active`: Currently valid and usable
+- `rotated`: Was valid but replaced by rotation
+- `revoked`: Explicitly logged out or expired
+- `compromised`: Detected reuse attack - all user sessions invalidated
+
+#### Risk Mitigation
+
+| Risk | Mitigation |
+|------|-----------|
+| **XSS Token Theft** | HttpOnly cookies prevent JavaScript access |
+| **CSRF** | SameSite=Lax + CORS origin validation with credentials |
+| **Refresh Token Reuse** | Rotation detection → revoke all sessions |
+| **Token Exposure in Logs** | Only hashes stored/logged, never raw tokens |
+| **Brute Force** | Rate limiting: 5 login attempts/min |
+| **Long-lived Access** | Access tokens expire in 15min |
+| **Concurrent Login Abuse** | Each session tracked independently with IP/UA |
+
+#### Database Schema
+
+```prisma
+model Session {
+  id                String        @id @default(uuid())
+  orgId             String
+  userId            String
+  
+  refreshTokenHash  String        // SHA-256 hash of refresh token
+  status            SessionStatus @default(active)
+  
+  rotatedFromId     String?       // Previous session in rotation chain
+  rotatedToId       String?       // Next session in rotation chain
+  
+  ip                String?
+  userAgent         String?
+  
+  createdAt         DateTime      @default(now())
+  lastUsedAt        DateTime?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  
+  // Relations for rotation chain
+  rotatedFrom       Session?      @relation("SessionRotationFrom")
+  rotatedTo         Session?      @relation("SessionRotationTo")
+}
+```
+
+#### API Endpoints
+
+- **POST /auth/register**: Create org + user, return cookies
+- **POST /auth/login**: Authenticate, return cookies
+- **POST /auth/refresh**: Rotate tokens (uses refresh_token cookie)
+- **POST /auth/logout**: Revoke session, clear cookies
+- **GET /auth/me**: Return user info (requires access_token)
+
+All endpoints audit to `AuditLog` with IP, user-agent, and outcome.
+
+### 2.2 Legacy Notes (maintained for reference)
+
+SentinelForge previously used basic session guidelines. The comprehensive implementation is now documented in section 2.1.
+
+**Key Requirements Met:**
+
+-   Refresh token stored as HttpOnly cookie ✓
+-   Secure flag enabled in production ✓
+-   SameSite=Lax for CSRF protection ✓
+-   Access token short-lived (15 minutes) ✓
+-   Refresh rotation implemented ✓
+-   Previous refresh token invalidated on rotation ✓
+
+### 2.3 Passwords
+
+-   store only password hashes (bcrypt with cost factor 12) ✓
+-   enforce password policy: 8+ chars, uppercase, lowercase, number, special character ✓
+-   rate limiting on login failures (5 attempts per minute) ✓
+
+### 2.4 CSRF
+
+Cookie-based auth CSRF protection implemented:
+
+-   `SameSite=Lax` cookies ✓
+-   CORS restricted to WEB_ORIGIN with credentials: true ✓
+-   Only same-origin requests allowed for state-changing operations ✓
+
+**CORS Configuration:**
+```typescript
+app.enableCors({
+  origin: process.env.WEB_ORIGIN || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+});
+```
 
 ---
 
@@ -266,15 +399,45 @@ Even with a mock model, follow the correct mental model:
 
 ## 12) Security Checklist (MVP)
 
--   [ ] Cookie-based refresh rotation implemented
--   [ ] CORS restricted to UI origin
--   [ ] RBAC + ABAC enforced server-side (default deny)
--   [ ] Input validation on all endpoints (including webhooks)
--   [ ] Body size limits set
--   [ ] Rate limiting on login and webhooks
--   [ ] Audit log for sensitive actions
--   [ ] No secrets in git, no secrets in logs
--   [ ] DLQ configured for MQ consumers
--   [ ] AI output stored as draft + citations
+### Authentication & Session Management
+-   [x] Cookie-based refresh rotation implemented
+-   [x] Refresh token stored as hash (SHA-256) in database
+-   [x] HttpOnly cookies with SameSite=Lax
+-   [x] Secure flag enabled (production)
+-   [x] Token reuse detection with session revocation
+-   [x] Access token short-lived (15 minutes)
+-   [x] Refresh token rotation on every refresh
+-   [x] Session audit trail (IP, user-agent, rotation chain)
+
+### Authorization & Access Control
+-   [x] RBAC implemented (admin, analyst, viewer)
+-   [ ] ABAC/Policy engine for fine-grained control (future)
+-   [x] Default deny for protected endpoints
+-   [x] Org boundary validation on all resources
+
+### Input Validation & Security
+-   [x] CORS restricted to UI origin with credentials
+-   [x] Input validation on all endpoints (class-validator DTOs)
+-   [x] Body size limits set (NestJS defaults ~100kb)
+-   [x] Rate limiting on auth endpoints (5/min login, 10/min refresh)
+-   [x] Password policy enforced (8+ chars, complexity rules)
+
+### Logging & Monitoring
+-   [x] Audit log for auth events (login, logout, refresh, failures)
+-   [x] Audit log includes IP, user-agent, trace context
+-   [ ] Audit log for resource access (incidents, evidence, playbooks) - in progress
+-   [ ] Policy decisions logged - pending policy engine
+
+### Secrets & Configuration
+-   [x] No secrets in git
+-   [x] Environment-based configuration
+-   [x] No tokens logged (only hashes)
+-   [ ] Integration secrets encrypted - future
+
+### Infrastructure Security
+-   [x] Security headers (helmet.js)
+-   [x] Validation pipe with whitelist
+-   [ ] DLQ configured for MQ consumers - pending
+-   [ ] AI output stored as draft + citations - pending AI implementation
 
 ---
