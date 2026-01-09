@@ -17,9 +17,9 @@ export function StatusDashboard() {
         refetch,
         isFetching,
     } = useGetSystemStatusQuery(undefined, {
-        pollingInterval: 1000 * 60, // Auto-refresh every 60 seconds
-        skipPollingIfUnfocused: true, // Stop polling when tab is inactive
-        refetchOnFocus: true, // Refresh when tab gains focus
+        pollingInterval: 1000 * 60,
+        skipPollingIfUnfocused: true,
+        refetchOnFocus: true,
     });
 
     if (isLoading) {
