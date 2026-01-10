@@ -14,6 +14,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto } from './dto';
 import { JwtPayload } from './decorators/current-user.decorator';
 import { OrgMemberRole, SessionStatus, AuditAction } from '@prisma/client';
+import { PolicyService } from '../policy/policy.service';
+import { buildDefaultPolicy } from '../policy/default-policy';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +27,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private readonly policyService: PolicyService,
   ) {}
 
   async register(dto: RegisterDto, ip?: string, userAgent?: string) {
@@ -85,6 +88,15 @@ export class AuthService {
           ip,
           userAgent,
         );
+
+      await this.policyService.createPolicyVersion({
+        orgId: result.org.id,
+        policyName: 'default',
+        document: buildDefaultPolicy(),
+        createdById: result.user.id,
+        changeSummary: 'Initial default policy',
+        activate: true,
+      });
 
       return {
         user: {

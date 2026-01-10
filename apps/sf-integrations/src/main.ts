@@ -4,7 +4,7 @@ import { connect } from "amqplib";
 
 const PORT = Number(process.env.PORT ?? 3002);
 const RABBIT_URL =
-    process.env.RABBIT_URL ?? "amqp://guest:guest@localhost:5672";
+    process.env.RABBIT_URL ?? "amqp://guest:guest@rabbitmq:5672";
 const EXCHANGE = process.env.RABBIT_EXCHANGE ?? "sf.events";
 
 const app = express();

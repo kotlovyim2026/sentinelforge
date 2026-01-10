@@ -33,7 +33,6 @@ describe('Auth System (e2e)', () => {
   });
 
   beforeEach(async () => {
-    // Clean up database before each test
     await prisma.session.deleteMany();
     await prisma.orgMember.deleteMany();
     await prisma.user.deleteMany();
@@ -57,7 +56,6 @@ describe('Auth System (e2e)', () => {
       expect(response.body).toHaveProperty('org');
       expect(response.body.org).toHaveProperty('name', 'Test Org');
 
-      // Check cookies
       const cookies = response.headers['set-cookie'] as unknown as string[];
       expect(cookies).toBeDefined();
       expect(cookies.some((c: string) => c.includes('access_token'))).toBe(
@@ -69,7 +67,6 @@ describe('Auth System (e2e)', () => {
     });
 
     it('should fail with duplicate email', async () => {
-      // First registration
       await request(app.getHttpServer())
         .post('/auth/register')
         .send({
@@ -79,7 +76,6 @@ describe('Auth System (e2e)', () => {
         })
         .expect(201);
 
-      // Second registration with same email
       await request(app.getHttpServer())
         .post('/auth/register')
         .send({
@@ -104,7 +100,6 @@ describe('Auth System (e2e)', () => {
 
   describe('POST /auth/login', () => {
     beforeEach(async () => {
-      // Create a user to test login
       await request(app.getHttpServer()).post('/auth/register').send({
         email: 'test@example.com',
         password: 'Test@1234',
@@ -166,7 +161,6 @@ describe('Auth System (e2e)', () => {
     });
 
     it('should refresh tokens with valid refresh token', async () => {
-      // First, login to get tokens
       const loginResponse = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -181,7 +175,6 @@ describe('Auth System (e2e)', () => {
         c.includes('refresh_token'),
       )!;
 
-      // Use refresh token to get new tokens
       const response = await request(app.getHttpServer())
         .post('/auth/refresh')
         .set('Cookie', refreshCookie)
@@ -202,7 +195,6 @@ describe('Auth System (e2e)', () => {
     });
 
     it('should detect refresh token reuse and revoke all sessions', async () => {
-      // Login to get initial tokens
       const loginResponse = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -217,19 +209,16 @@ describe('Auth System (e2e)', () => {
         c.includes('refresh_token'),
       )!;
 
-      // First refresh (should succeed)
       const firstRefreshResponse = await request(app.getHttpServer())
         .post('/auth/refresh')
         .set('Cookie', oldRefreshCookie)
         .expect(200);
 
-      // Try to reuse old refresh token (should fail and revoke all sessions)
       await request(app.getHttpServer())
         .post('/auth/refresh')
         .set('Cookie', oldRefreshCookie)
         .expect(401);
 
-      // Verify all sessions are revoked by checking that the new token also doesn't work
       const newCookies = firstRefreshResponse.headers[
         'set-cookie'
       ] as unknown as string[];
@@ -237,7 +226,6 @@ describe('Auth System (e2e)', () => {
         c.includes('refresh_token'),
       )!;
 
-      // This should also fail because all sessions were revoked
       await request(app.getHttpServer())
         .post('/auth/refresh')
         .set('Cookie', newRefreshCookie)
@@ -255,7 +243,6 @@ describe('Auth System (e2e)', () => {
     });
 
     it('should return user info when authenticated', async () => {
-      // Login first
       const loginResponse = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -270,7 +257,6 @@ describe('Auth System (e2e)', () => {
         c.includes('access_token'),
       )!;
 
-      // Get user info
       const response = await request(app.getHttpServer())
         .get('/auth/me')
         .set('Cookie', accessCookie)
@@ -297,7 +283,6 @@ describe('Auth System (e2e)', () => {
     });
 
     it('should logout and clear cookies', async () => {
-      // Login first
       const loginResponse = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -312,13 +297,11 @@ describe('Auth System (e2e)', () => {
         c.includes('access_token'),
       )!;
 
-      // Logout
       const response = await request(app.getHttpServer())
         .post('/auth/logout')
         .set('Cookie', accessCookie)
         .expect(200);
 
-      // Check that cookies are cleared
       const logoutCookies = response.headers[
         'set-cookie'
       ] as unknown as string[];
@@ -328,12 +311,17 @@ describe('Auth System (e2e)', () => {
 
   describe('Rate Limiting', () => {
     it('should rate limit login attempts', async () => {
-      // Try to login 25 times rapidly (limit is 20 per minute)
+      await request(app.getHttpServer()).post('/auth/register').send({
+        email: 'limit@example.com',
+        password: 'Test@1234',
+        organizationName: 'Rate Limit Org',
+      });
+
       const promises = Array(25)
         .fill(null)
         .map(() =>
           request(app.getHttpServer()).post('/auth/login').send({
-            email: 'test@example.com',
+            email: 'limit@example.com',
             password: 'Test@1234',
           }),
         );

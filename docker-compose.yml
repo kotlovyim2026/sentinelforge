@@ -60,6 +60,10 @@ services:
         depends_on:
             rabbitmq:
                 condition: service_healthy
+        environment:
+            PORT: 3002
+            RABBIT_URL: amqp://guest:guest@rabbitmq:5672
+            RABBIT_EXCHANGE: sf.events
         env_file: .env
 
     orchestrator:

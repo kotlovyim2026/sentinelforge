@@ -5,10 +5,14 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
+import { RequestContextService } from '../../common/request-context.service';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private reflector: Reflector) {
+  constructor(
+    private reflector: Reflector,
+    private readonly requestContext: RequestContextService,
+  ) {
     super();
   }
 
@@ -29,6 +33,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (err || !user) {
       throw err || new UnauthorizedException('Invalid or expired token');
     }
+    this.requestContext.setUser(user?.sub, user?.orgId);
     return user;
   }
 }
