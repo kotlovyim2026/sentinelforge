@@ -9,6 +9,7 @@ import {
     FileText,
     Shield,
     ScrollText,
+    Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -53,6 +54,11 @@ export const navItems: NavItem[] = [
         title: "Policies",
         href: "/policies",
         icon: Shield,
+    },
+    {
+        title: "AI",
+        href: "/ai",
+        icon: Sparkles,
     },
     {
         title: "Audit Log",
