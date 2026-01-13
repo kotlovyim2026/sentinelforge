@@ -4,6 +4,7 @@ import {
   Param,
   Post,
   NotFoundException,
+  Get,
 } from '@nestjs/common';
 import { PolicyService } from './policy.service';
 import { AuthorizationService } from './authorization.service';
@@ -12,7 +13,10 @@ import {
   type JwtPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CreatePolicyVersionDto } from './dto/create-policy-version.dto';
-import { SimulatePolicyDto } from './dto/simulate-policy.dto';
+import {
+  SimulateActivePolicyDto,
+  SimulatePolicyDto,
+} from './dto/simulate-policy.dto';
 import { PolicyEngineService } from './policy-engine.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '@prisma/client';
@@ -60,6 +64,50 @@ export class PolicyController {
     });
 
     return created;
+  }
+
+  @Get('active')
+  async getActive(@CurrentUser() user: JwtPayload) {
+    await this.authorization.enforce({
+      action: 'policy.read',
+      resourceType: 'policy',
+      resource: { org_id: user.orgId },
+      user,
+    });
+
+    const active = await this.policyService.getActivePolicyVersion(user.orgId);
+    if (!active) {
+      throw new NotFoundException('Active policy not found');
+    }
+    return active;
+  }
+
+  @Get('versions')
+  async listVersions(@CurrentUser() user: JwtPayload) {
+    await this.authorization.enforce({
+      action: 'policy.read',
+      resourceType: 'policy',
+      resource: { org_id: user.orgId },
+      user,
+    });
+
+    return this.policyService.listVersions(user.orgId);
+  }
+
+  @Get('versions/:id')
+  async getVersion(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    await this.authorization.enforce({
+      action: 'policy.read',
+      resourceType: 'policy',
+      resource: { org_id: user.orgId },
+      user,
+    });
+
+    const version = await this.policyService.getVersion(user.orgId, id);
+    if (!version) {
+      throw new NotFoundException('Policy version not found');
+    }
+    return version;
   }
 
   @Post('versions/:id/activate')
@@ -124,6 +172,44 @@ export class PolicyController {
       action: AuditAction.policy_simulate,
       resourceType: 'policy',
       message: 'Policy simulation executed',
+      meta: { scenarios: dto.scenarios.length },
+    });
+
+    return { results };
+  }
+
+  @Post('simulate/active')
+  async simulateActive(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SimulateActivePolicyDto,
+  ) {
+    await this.authorization.enforce({
+      action: 'policy.simulate',
+      resourceType: 'policy',
+      resource: { org_id: user.orgId },
+      user,
+    });
+
+    const active = await this.policyService.getActivePolicy(user.orgId);
+    if (!active) {
+      throw new NotFoundException('Active policy not found');
+    }
+
+    const results = dto.scenarios.map((scenario) =>
+      this.engine.evaluate(active as any, {
+        subject: scenario.subject as any,
+        action: scenario.action,
+        resource: scenario.resource,
+        context: scenario.context,
+      }),
+    );
+
+    await this.audit.log({
+      orgId: user.orgId,
+      userId: user.sub,
+      action: AuditAction.policy_simulate,
+      resourceType: 'policy',
+      message: 'Policy simulation (active) executed',
       meta: { scenarios: dto.scenarios.length },
     });
 

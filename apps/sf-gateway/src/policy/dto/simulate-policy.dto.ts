@@ -32,3 +32,10 @@ export class SimulatePolicyDto {
   @Type(() => SimulationScenarioDto)
   scenarios: SimulationScenarioDto[];
 }
+
+export class SimulateActivePolicyDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SimulationScenarioDto)
+  scenarios: SimulationScenarioDto[];
+}

@@ -31,6 +31,11 @@ export class AuthorizationService {
   ) {}
 
   async enforce(params: EnforcementParams): Promise<EvaluationResult> {
+    await this.policyService.ensureActivePolicy(
+      params.user.orgId,
+      params.user.sub,
+    );
+
     const policy = await this.policyService.getActivePolicy(params.user.orgId);
     const requestContext = this.contextService.get();
 

@@ -166,6 +166,18 @@ export const buildDefaultPolicy = (): PolicyDocument => ({
       },
       reason: 'Policy changes require admin role',
     },
+    {
+      rule_id: 'r-policy-read-admin',
+      description: 'Admins can read policy documents',
+      effect: 'allow',
+      when: {
+        all: [
+          { includes: ['subject.roles', 'admin'] },
+          { eq: ['subject.org_id', 'resource.org_id'] },
+          { eq: ['action', 'policy.read'] },
+        ],
+      },
+    },
   ],
   default: {
     effect: 'deny',

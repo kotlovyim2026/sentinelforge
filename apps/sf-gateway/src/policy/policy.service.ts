@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyDocument } from './policy.types';
+import { buildDefaultPolicy } from './default-policy';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -26,6 +27,68 @@ export class PolicyService {
     const document = active.document as unknown as PolicyDocument;
     this.cache.set(orgId, document);
     return document;
+  }
+
+  async getActivePolicyVersion(orgId: string) {
+    return this.prisma.policyVersion.findFirst({
+      where: { orgId, isActive: true },
+      orderBy: { version: 'desc' },
+    });
+  }
+
+  async listVersions(orgId: string) {
+    return this.prisma.policyVersion.findMany({
+      where: { orgId },
+      orderBy: { version: 'desc' },
+    });
+  }
+
+  async getVersion(orgId: string, id: string) {
+    const version = await this.prisma.policyVersion.findUnique({
+      where: { id },
+    });
+    if (!version || version.orgId !== orgId) return null;
+    return version;
+  }
+
+  async ensureActivePolicy(orgId: string, createdById?: string) {
+    const active = await this.prisma.policyVersion.findFirst({
+      where: { orgId, isActive: true },
+      select: { id: true },
+    });
+
+    if (active) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const exists = await tx.policyVersion.findFirst({
+        where: { orgId, isActive: true },
+        select: { id: true },
+      });
+      if (exists) return; // another concurrent ensure won the race
+
+      const policy = await tx.policy.upsert({
+        where: { orgId_name: { orgId, name: 'default' } },
+        update: {},
+        create: { orgId, name: 'default', enabled: true },
+      });
+
+      const created = await tx.policyVersion.create({
+        data: {
+          policyId: policy.id,
+          orgId,
+          version: 1,
+          document: buildDefaultPolicy(),
+          createdById,
+          changeSummary: 'Auto-seeded default policy',
+          isActive: true,
+        },
+      });
+
+      this.logger.log(
+        `Auto-seeded default policy v${created.version} for org ${orgId}`,
+      );
+      this.invalidateCache(orgId);
+    });
   }
 
   async createPolicyVersion(params: {
